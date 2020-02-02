@@ -1,0 +1,43 @@
+var db = app.ActiveModelDb;
+var modelcs = app.ActiveModel.CoordSysWkt;
+var ucs = app.ActiveModel.UserCoordSysWkt;
+var doc = app.ActiveDocument();
+
+function round(value, decimals) {
+  return Number(Math.round(value+'e'+decimals)+'e-'+decimals);
+}
+
+function getCoordinate(feature) {
+    var featReproject = feature.GEOMETRY.Reproject(modelcs, ucs);
+    if (featReproject == null) {
+        return;
+    }
+    var X = round(featReproject.Centroid2d.X,4);
+    var Y = round(featReproject.Centroid2d.Y,4);
+    var elevation;
+    if (feature.GEOMETRY.Is3d) //check for elevation, if set use it, otherwise get elevation from terrain.
+        elevation = feature.GEOMETRY.BBox3d.Center.Z;
+    else
+        elevation = doc.FindElevation(new adsk.Vec3d(feature.GEOMETRY.Centroid2d.X, feature.GEOMETRY.Centroid2d.Y, 0)).Z;
+    if (app.GetUnit(adsk.Enums.LengthUnit) == adsk.Enums.Feet) //convert elevation if needed. Looks at application units.
+        elevation = elevation * 3.28084;
+    return X + ", " + Y + ", " + round(elevation,4);
+}
+
+function writeXYZ() {
+    var classID = db.TableIndex("POIS");
+    var poisTable = db.Table(classID);
+    var poisRow = poisTable.GetWriteRow();
+    poisTable.StartQuery();
+    var row = poisTable.Next();
+    while (row) {
+        poisRow["USER_DATA"] = getCoordinate(row);
+        var featureId = row.ID;
+        poisTable.UpdateFeature(poisRow, featureId);
+        print("Feature " + featureId + " was updated.");
+        row = poisTable.Next();
+    }
+    poisTable.EndQuery();
+}
+
+writeXYZ();
